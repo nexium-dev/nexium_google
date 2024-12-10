@@ -1,0 +1,4 @@
+google-auth==2.36.0
+gspread==6.1.4
+gspread_formatting==1.2.0
+pytz==2024.2
