@@ -123,7 +123,7 @@ if __name__ == '__main__':
     run(main())
 ```
 The example below demonstrates an algorithm where a new user is added, followed by a `for` loop iterating through all users to update their salaries.
-![Spreadsheet](/docs/spreadsheet.gif)
+![Spreadsheet](https://github.com/nexium-dev/nexium_google/blob/main/docs/spreadsheet.gif?raw=true)
 
 ## YouTube
 

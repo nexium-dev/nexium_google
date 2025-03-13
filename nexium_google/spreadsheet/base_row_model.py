@@ -1,7 +1,6 @@
-from asyncio import get_running_loop
-from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, date, time
 from functools import partial
+from logging import getLogger
 
 from gspread import Worksheet
 from gspread.utils import ValueInputOption
@@ -10,6 +9,7 @@ from nexium_google.spreadsheet.field import Field
 from nexium_google.spreadsheet.field_type import FieldType
 
 
+logger = getLogger(__name__)
 TYPES = {
     FieldType.BOOLEAN: bool,
     FieldType.STRING: str,
@@ -32,11 +32,13 @@ class ModelMeta(type):
 
 
 class BaseRowModel(metaclass=ModelMeta):
+    _sheet_name: str
     _sheet: Worksheet
     _fields: dict[str, Field]
 
     def __init__(self, **kwargs):
         self.index = kwargs.get('index', None)
+        self._instances = []
 
         for field_name, field in self._fields.items():
             value = kwargs.get(field_name)
@@ -45,8 +47,10 @@ class BaseRowModel(metaclass=ModelMeta):
         if not self._sheet:
             raise ValueError('Sheet is not bound to the model.')
 
-    async def get_all(self) -> list:
-        records = await self._request(
+    async def get_all(self) -> list['BaseRowModel']:
+        logger.debug(f'Get all rows on the "{self._sheet_name}" sheet:')
+
+        records = await self.spreadsheet.request(
             function=partial(
                 self._sheet.get_all_records,
             ),
@@ -66,7 +70,8 @@ class BaseRowModel(metaclass=ModelMeta):
         await self._serialization()
         data = [getattr(self, f'_{field_name}', None) for field_name in self._fields]
         if self.index:
-            await self._request(
+            logger.debug(f'Creating a new row on the "{self._sheet_name}" sheet with index {self.index}: {data}')
+            await self.spreadsheet.request(
                 function=partial(
                     self._sheet.insert_row,
                     values=data,
@@ -75,7 +80,9 @@ class BaseRowModel(metaclass=ModelMeta):
                 ),
             )
             return self
-        await self._request(
+
+        logger.debug(f'Creating a new row on the "{self._sheet_name}" sheet: {data}')
+        await self.spreadsheet.request(
             function=partial(
                 self._sheet.append_row,
                 values=data,
@@ -87,12 +94,22 @@ class BaseRowModel(metaclass=ModelMeta):
     async def update(self):
         await self._serialization()
         data = [getattr(self, f'_{field_name}', None) for field_name in self._fields]
-        await self._request(
+        logger.debug(f'Updating row on the "{self._sheet_name}" sheet with index {self.index}: {data}:')
+        await self.spreadsheet.request(
             function=partial(
                 self._sheet.update,
                 values=[data],
                 range_name=f'A{self.index}:{chr(64+len(data))}{self.index}',
                 value_input_option=ValueInputOption.user_entered,
+            ),
+        )
+
+    async def delete(self):
+        logger.debug(f'Deleting row on the "{self._sheet_name}" sheet with index {self.index}')
+        await self.spreadsheet.request(
+            function=partial(
+                self._sheet.delete_rows,
+                start_index=self.index,
             ),
         )
 
@@ -106,7 +123,7 @@ class BaseRowModel(metaclass=ModelMeta):
                 value = field.default
                 setattr(self, field_name, value)
 
-            if not value and not field.nullable:
+            if value is None and not field.nullable:
                 raise TypeError(f'Attribute "{field_name}" cannot be None')
 
             if value is not None:
@@ -163,14 +180,7 @@ class BaseRowModel(metaclass=ModelMeta):
             setattr(self, field_name, value)
             setattr(self, f'_{field_name}', formatted_value)
 
-    @staticmethod
-    async def _request(function: partial):
-        loop = get_running_loop()
-        with ThreadPoolExecutor() as pool:
-            # noinspection PyTypeChecker
-            result = await loop.run_in_executor(pool, function)
-        return result
-
     @classmethod
-    def bind_sheet(cls, sheet: Worksheet):
+    def bind_sheet(cls, sheet: Worksheet, spreadsheet):
         cls._sheet = sheet
+        cls.spreadsheet = spreadsheet

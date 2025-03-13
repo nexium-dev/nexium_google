@@ -7,6 +7,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 IS_TEST = True if getenv('IS_TEST') == 'True' else False
+VERSION = getenv('VERSION')
 if IS_TEST:
     USERNAME = getenv('PYPI_TEST_USERNAME')
     PASSWORD = getenv('PYPI_TEST_PASSWORD')
@@ -19,19 +20,21 @@ else:
 
 def run_command(command):
     result = subprocess.run(command, shell=True, capture_output=True, text=True)
+    logging.info(result.stdout)
     if result.returncode != 0:
-        print(result.stdout)
         logging.error(f'Error occurred: {result.stderr}')
-    else:
-        logging.info(result.stdout)
 
 
 def main():
     logging.info('Run setup.py...')
     run_command('python setup.py sdist bdist_wheel')
 
+    logging.info(f'New version: {VERSION}')
+    if not input('Continue? [y/N] ') == 'y':
+        return
+
     logging.info('Upload...')
-    upload_command = f'twine upload --repository {REPOSITORY} dist/* -u {USERNAME} -p {PASSWORD}'
+    upload_command = f'twine upload --verbose --repository {REPOSITORY} dist/* -u {USERNAME} -p {PASSWORD}'
     run_command(upload_command)
 
 
